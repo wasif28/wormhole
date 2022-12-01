@@ -1,0 +1,48 @@
+2022-11-23T20:46:36.767307Z  INFO sui::client_commands: [1m----- Certificate ----[0m
+2022-11-23T20:46:36.767366Z  INFO sui::client_commands: Transaction Hash: qa23AbwzkEPVtyGC9uenPl/RlyKPkuroUnClTvnBqAg=
+2022-11-23T20:46:36.767376Z  INFO sui::client_commands: Transaction Signature: AA==@ESGNBXsTjyay+ehfD3/pQyt+i+IQDm+6a+ZVfjFmgWE7xX+JKTpe2baSkhqfk/oEY28wvmjX0ooFjkMP1vWbDQ==@VcrtEFmUrsVTjEU2vCH1MOnDHupo80U0rXWsk1nzSCM=
+2022-11-23T20:46:36.767389Z  INFO sui::client_commands: Signed Authorities Bitmap: RoaringBitmap<[0, 1, 3]>
+2022-11-23T20:46:36.767401Z  INFO sui::client_commands: Transaction Kind : Call
+2022-11-23T20:46:36.767415Z  INFO sui::client_commands: Package ID : 0xed1e8e6e25772511b307642a6f9042b864065577
+2022-11-23T20:46:36.767431Z  INFO sui::client_commands: Module : wrapped
+2022-11-23T20:46:36.767447Z  INFO sui::client_commands: Function : register_wrapped_coin
+2022-11-23T20:46:36.767459Z  INFO sui::client_commands: Arguments : ["0x76d75a9817b758c60f8cd0dae494d5c9ceeb7fe2", "0xd313410c73cf9d10f1f5e84fc50b1fda98ffcd2e", "0x8dfbf1ab42c53911fbaa12e6b81cc478e23a26e0"]
+2022-11-23T20:46:36.767473Z  INFO sui::client_commands: Type Arguments : ["0x63b44cab986d19dc3b5df3f31afda6266800ce49::coin_witness::COIN_WITNESS"]
+2022-11-23T20:46:36.767485Z  INFO sui::client_commands: [1m----- Transaction Effects ----[0m
+2022-11-23T20:46:36.767496Z  INFO sui::client_commands: Status : Success
+2022-11-23T20:46:36.767508Z  INFO sui::client_commands: Created Objects:
+2022-11-23T20:46:36.767541Z  INFO sui::client_commands:   - ID: 0x1a5a90fdadf362bf442b7d89b5a20cb51c5b40c3 , Owner: Object ID: ( 0xb473b177c3221b72716d0fdc160413aaa1ed5d87 )
+2022-11-23T20:46:36.767587Z  INFO sui::client_commands:   - ID: 0x45b2094fd26746cdb9374c651b2aecf946c0dc24 , Owner: Object ID: ( 0x4147ce385faba204cbb177ad0cadd20cc4b3ebf8 )
+2022-11-23T20:46:36.767595Z  INFO sui::client_commands:   - ID: 0x48f312e881e0fc0bcd3b1a1eb2878b91102146de , Owner: Object ID: ( 0x45b2094fd26746cdb9374c651b2aecf946c0dc24 )
+2022-11-23T20:46:36.767606Z  INFO sui::client_commands:   - ID: 0xb473b177c3221b72716d0fdc160413aaa1ed5d87 , Owner: Object ID: ( 0x6ad539ac8a2235df5c4c1308b8a09170e5d242d4 )
+2022-11-23T20:46:36.767625Z  INFO sui::client_commands: Mutated Objects:
+2022-11-23T20:46:36.767644Z  INFO sui::client_commands:   - ID: 0x53d3cb3863168feddd3006a93301c9753c4a0eab , Owner: Account Address ( 0xed1385d359d3ba12ebcf384e7091f56b14d94533 )
+2022-11-23T20:46:36.767655Z  INFO sui::client_commands:   - ID: 0x76d75a9817b758c60f8cd0dae494d5c9ceeb7fe2 , Owner: Shared
+2022-11-23T20:46:36.767670Z  INFO sui::client_commands:   - ID: 0xd313410c73cf9d10f1f5e84fc50b1fda98ffcd2e , Owner: Shared
+2022-11-23T20:46:36.767684Z  INFO sui::client_commands: Deleted Objects:
+2022-11-23T20:46:36.767700Z  INFO sui::client_commands:   - ID: 0x8dfbf1ab42c53911fbaa12e6b81cc478e23a26e0
+2022-11-23T21:05:28.294788Z  INFO sui::client_commands: [1m----- Certificate ----[0m
+2022-11-23T21:05:28.294844Z  INFO sui::client_commands: Transaction Hash: FFjnMUPFv/3YP09ZZpaD5NMDn5+U7reoAKJFl4oe3Zg=
+2022-11-23T21:05:28.294863Z  INFO sui::client_commands: Transaction Signature: AA==@7ainqa8KgCxqqJ6JTspMWiJWjDYD3k8uCseBzzzOEijHpqUdYvc1MFWb0WaFnmbolArad2LOAydUtICX9YWoDw==@VcrtEFmUrsVTjEU2vCH1MOnDHupo80U0rXWsk1nzSCM=
+2022-11-23T21:05:28.294878Z  INFO sui::client_commands: Signed Authorities Bitmap: RoaringBitmap<[0, 1, 3]>
+2022-11-23T21:05:28.294898Z  INFO sui::client_commands: Transaction Kind : Call
+2022-11-23T21:05:28.294915Z  INFO sui::client_commands: Package ID : 0x4821374820ec8ac52325d41451824bfbee427388
+2022-11-23T21:05:28.294928Z  INFO sui::client_commands: Module : wrapped
+2022-11-23T21:05:28.294942Z  INFO sui::client_commands: Function : register_wrapped_coin
+2022-11-23T21:05:28.294959Z  INFO sui::client_commands: Arguments : ["0x841bbbfb1f302c78cf349695ba83aeea351b3167", "0x3ddfcc287ed337d7be16cb3d5fc7e302f490c82d", "0xe2f92a2ac68757d3858e1d400bacce28c6fc9994"]
+2022-11-23T21:05:28.294976Z  INFO sui::client_commands: Type Arguments : ["0xcdd28e33ce9940236daf0801a5a42248aa8b0ca5::coin_witness::COIN_WITNESS"]
+2022-11-23T21:05:28.294991Z  INFO sui::client_commands: [1m----- Transaction Effects ----[0m
+2022-11-23T21:05:28.295005Z  INFO sui::client_commands: Status : Success
+2022-11-23T21:05:28.295021Z  INFO sui::client_commands: Created Objects:
+2022-11-23T21:05:28.295037Z  INFO sui::client_commands:   - ID: 0x2bf165d787902a29329f29321ade2219dff8e45c , Owner: Object ID: ( 0xc709a0ec5d193ec294513ef4b067fad525a1ccd1 )
+2022-11-23T21:05:28.295052Z  INFO sui::client_commands:   - ID: 0x63018e67ce0811bb4eae324ad797e9b51936b0ad , Owner: Object ID: ( 0x00bc42e28bcc724bab467923955ce907aad4178d )
+2022-11-23T21:05:28.295067Z  INFO sui::client_commands:   - ID: 0xbec42b7af2f2c2a6f5eeafadf2fc3d0aaffd3dcf , Owner: Object ID: ( 0x48d3947787b9918ba472654f7860aa5ae5286cb5 )
+2022-11-23T21:05:28.295082Z  INFO sui::client_commands:   - ID: 0xc329559374c1a165af631f75448252729155745c , Owner: Object ID: ( 0x63018e67ce0811bb4eae324ad797e9b51936b0ad )
+2022-11-23T21:05:28.295099Z  INFO sui::client_commands:   - ID: 0xc709a0ec5d193ec294513ef4b067fad525a1ccd1 , Owner: Object ID: ( 0xcedfb788b7835bb16233e4cfa18aa7e9b3b8666d )
+2022-11-23T21:05:28.295114Z  INFO sui::client_commands:   - ID: 0xc8d7dd573e52ecdfaf01fc75f20da9e8b806fb6d , Owner: Object ID: ( 0xbec42b7af2f2c2a6f5eeafadf2fc3d0aaffd3dcf )
+2022-11-23T21:05:28.295128Z  INFO sui::client_commands: Mutated Objects:
+2022-11-23T21:05:28.295144Z  INFO sui::client_commands:   - ID: 0x3ddfcc287ed337d7be16cb3d5fc7e302f490c82d , Owner: Shared
+2022-11-23T21:05:28.295160Z  INFO sui::client_commands:   - ID: 0x53d3cb3863168feddd3006a93301c9753c4a0eab , Owner: Account Address ( 0xed1385d359d3ba12ebcf384e7091f56b14d94533 )
+2022-11-23T21:05:28.295175Z  INFO sui::client_commands:   - ID: 0x841bbbfb1f302c78cf349695ba83aeea351b3167 , Owner: Shared
+2022-11-23T21:05:28.295189Z  INFO sui::client_commands: Deleted Objects:
+2022-11-23T21:05:28.295205Z  INFO sui::client_commands:   - ID: 0xe2f92a2ac68757d3858e1d400bacce28c6fc9994
