@@ -1,30 +1,62 @@
 import yargs from "yargs";
-import { callEntryFunc } from "../sui";
+import { callEntryFunc, publishPackage} from "../sui";
 import { spawnSync } from 'child_process';
+import { NETWORKS } from "../networks";
 
 
 type Network = "MAINNET" | "TESTNET" | "DEVNET"
 
+function assertNetwork(n: string): asserts n is Network {
+    if (
+      n !== "MAINNET" &&
+      n !== "TESTNET" &&
+      n !== "DEVNET"
+    ) {
+      throw Error(`Unknown network: ${n}`);
+    }
+}
 
-exports.command = 'aptos';
-exports.desc = 'Aptos utilities ';
+const network_options = {
+    alias: "n",
+    describe: "network",
+    type: "string",
+    choices: ["mainnet", "testnet", "devnet"],
+    required: true,
+  } as const;
+
+const rpc_description = {
+alias: "r",
+describe: "override default rpc endpoint url",
+type: "string",
+required: false,
+} as const;
+
+exports.command = 'sui';
+exports.desc = 'Sui utilities ';
 exports.builder = function(y: typeof yargs) {
   return y
-    .command("init-token-bridge", "Init token bridge contract", (yargs) => {
+    .command("init-wormhole", "Publish Wormhole core contract", (yargs) => {
       return yargs
         .option("network", network_options)
         .option("rpc", rpc_description)
-        // TODO(csongor): once the sdk has this, just use it from there
-        .option("contract-address", {
-          alias: "a",
-          required: true,
-          describe: "Address where the wormhole module is deployed",
-          type: "string",
-        })
     }, async (argv) => {
       const network = argv.network.toUpperCase();
       assertNetwork(network);
-      const contract_address = evm_address(argv["contract-address"]);
-      const rpc = argv.rpc ?? NETWORKS[network]["aptos"].rpc;
-      await callEntryFunc(network, rpc, `${contract_address}::token_bridge`, "init", [], []);
+      const rpc = argv.rpc ?? NETWORKS[network]["sui"].rpc;
+      console.log("network: ", network)
+      console.log("rpc: ", rpc)
+      await publishPackage(network, rpc, "../../sui/wormhole");
     })
+    .command("init-coin", "Publish coin contract", (yargs) => {
+        return yargs
+          .option("network", network_options)
+          .option("rpc", rpc_description)
+      }, async (argv) => {
+        const network = argv.network.toUpperCase();
+        assertNetwork(network);
+        const rpc = argv.rpc ?? NETWORKS[network]["sui"].rpc;
+        console.log("network: ", network)
+        console.log("rpc: ", rpc)
+        await publishPackage(network, rpc, "../../sui/coin");
+      })
+}
