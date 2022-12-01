@@ -375,8 +375,7 @@ const DEVNET = {
   },
   sui: {
     rpc: "http://0.0.0.0:9000",
-    pubkey: "0xeabe4577e9734b78a2e9684ff9f89273c1e74332",
-    key: "AMe5LobBb9YvONth1uxQQlERXrKm7ju3r2yE4r6DA0uSat7KUf7YuYctOX3PpV9/n+zx6oGMqTX8xKDV+VECmWk=",
+    key: "ANvEBC3BGZ9cD5V20vsFBbzYv2OaofnPf9Yqa7rBSTbrkh+/tyHf94fiQM6uCpry2PR0RF2uPxokSBQgE26Dv80=",
   },
   moonbeam: {
     rpc: undefined,
