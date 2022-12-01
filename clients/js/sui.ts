@@ -1,10 +1,12 @@
-import { textToHexString } from '@certusone/wormhole-sdk';
 import { Ed25519Keypair, JsonRpcProvider, RawSigner, Base64DataBuffer} from '@mysten/sui.js';
 import { NETWORKS } from "./networks";
-const { execSync } = require('child_process');
+import { execSync } from "child_process";
+
+
+type Network = "MAINNET" | "TESTNET" | "DEVNET"
 
 function loadSigner(
-    network: "MAINNET" | "TESTNET" | "DEVNET",
+    network: Network,
     rpc: string | undefined,
 ){
     let private_key_str_base_64: string | undefined = NETWORKS[network]["sui"].key;
@@ -25,7 +27,7 @@ function loadSigner(
 // Reference: https://github.com/MystenLabs/sui/tree/main/sdk/typescript
 // TODO - why does publish result in error?
 export async function publishPackage(
-    network: "MAINNET" | "TESTNET" | "DEVNET",
+    network: Network,
     rpc: string | undefined,
     packagePath: string,
 ){
@@ -51,7 +53,7 @@ export async function publishPackage(
 }
 
 export async function callEntryFunc(
-    network: "MAINNET" | "TESTNET" | "DEVNET",
+    network: Network,
     rpc: string | undefined,
     packageObjectId: string,
     module: string,
