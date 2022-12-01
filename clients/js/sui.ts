@@ -23,6 +23,7 @@ function loadSigner(
 }
 
 // Reference: https://github.com/MystenLabs/sui/tree/main/sdk/typescript
+// TODO - why does publish result in error?
 export async function publishPackage(
     network: "MAINNET" | "TESTNET" | "DEVNET",
     rpc: string | undefined,
