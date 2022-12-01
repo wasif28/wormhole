@@ -2,6 +2,7 @@ import yargs from "yargs";
 import { callEntryFunc, publishPackage} from "../sui";
 import { spawnSync } from 'child_process';
 import { NETWORKS } from "../networks";
+import { config } from '../config';
 
 
 type Network = "MAINNET" | "TESTNET" | "DEVNET"
@@ -31,6 +32,8 @@ type: "string",
 required: false,
 } as const;
 
+const dir = `${config.wormholeDir}/sui`;
+
 exports.command = 'sui';
 exports.desc = 'Sui utilities ';
 exports.builder = function(y: typeof yargs) {
@@ -45,7 +48,7 @@ exports.builder = function(y: typeof yargs) {
       const rpc = argv.rpc ?? NETWORKS[network]["sui"].rpc;
       console.log("network: ", network)
       console.log("rpc: ", rpc)
-      await publishPackage(network, rpc, "../../sui/wormhole");
+      await publishPackage(network, rpc, `${dir}/wormhole`);
     })
     .command("init-coin", "Publish coin contract", (yargs) => {
         return yargs
@@ -57,6 +60,6 @@ exports.builder = function(y: typeof yargs) {
         const rpc = argv.rpc ?? NETWORKS[network]["sui"].rpc;
         console.log("network: ", network)
         console.log("rpc: ", rpc)
-        await publishPackage(network, rpc, "../../sui/coin");
+        await publishPackage(network, rpc, `${dir}/coin`);
       })
 }
