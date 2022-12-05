@@ -1,4 +1,4 @@
-import { Ed25519Keypair, JsonRpcProvider, RawSigner, Base64DataBuffer} from '@mysten/sui.js';
+import { Ed25519Keypair, JsonRpcProvider, RawSigner} from '@mysten/sui.js';
 import { NETWORKS } from "./networks";
 import { execSync } from "child_process";
 
@@ -35,18 +35,15 @@ export async function publishPackage(
     console.log("publish package rpc: ", rpc)
 
     let signer = loadSigner(network, rpc)
-    const compiledModules = JSON.parse(
+    const compiledModules: string[] = JSON.parse(
         execSync(
           `sui move build --dump-bytecode-as-base64 --path ${packagePath}`,
           { encoding: 'utf-8' }
         )
       );
-      const modulesInBytes = compiledModules.map((m) =>
-        Array.from(new Base64DataBuffer(m).getData())
-      );
       console.log("compiled modules: ", compiledModules)
       const publishTxn = await signer.publish({
-        compiledModules: modulesInBytes,
+        compiledModules: compiledModules,
         gasBudget: 10000,
       });
       console.log('publishTxn', publishTxn);
