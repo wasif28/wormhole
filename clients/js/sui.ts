@@ -10,7 +10,6 @@ function loadSigner(
     rpc: string | undefined,
 ){
     let private_key_str_base_64: string | undefined = NETWORKS[network]["sui"].key;
-    console.log("priv_key str: ", private_key_str_base_64)
     if (private_key_str_base_64 === undefined) {
       throw new Error("No key for Sui");
     }
