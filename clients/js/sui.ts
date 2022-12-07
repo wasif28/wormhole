@@ -36,7 +36,7 @@ export async function publishPackage(
     let signer = loadSigner(network, rpc)
     const compiledModules: string[] = JSON.parse(
         execSync(
-          `sui move build --dump-bytecode-as-base64 --path ${packagePath}`,
+          `docker run -it -v ${packagePath}:${packagePath} -w ${packagePath} ghcr.io/wormhole-foundation/sui:0.17.0a sui move build --dump-bytecode-as-base64 --path ${packagePath}`,
           { encoding: 'utf-8' }
         )
       );
