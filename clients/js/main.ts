@@ -874,7 +874,14 @@ yargs(hideBin(process.argv))
       } else if (chain === "osmosis") {
         throw Error("OSMOSIS is not supported yet");
       } else if (chain === "sui") {
-        throw Error("SUI is not supported yet");
+        const sui = require("./sui")
+        await sui.execute_sui(
+          parsed_vaa.payload,
+          buf,
+          network,
+          argv["contract-address"],
+          argv["rpc"]
+        );
       } else if (chain === "aptos") {
         const aptos = require("./aptos")
         await aptos.execute_aptos(
