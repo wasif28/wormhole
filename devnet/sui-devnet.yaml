@@ -60,6 +60,6 @@ spec:
               protocol: TCP
           readinessProbe:
             tcpSocket:
-              port: 9002
+              port: 9000
 
       restartPolicy: Always
