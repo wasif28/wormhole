@@ -29,10 +29,7 @@ import { NETWORKS } from "./networks";
 import base58 from "bs58";
 import { sha3_256 } from "js-sha3";
 import { isOutdated } from "./cmds/update";
-import { setDefaultWasm } from "@certusone/wormhole-sdk/lib/cjs/solana/wasm";
 import { assertChain, assertEVMChain, ChainName, CHAINS, CONTRACTS as SDK_CONTRACTS, isCosmWasmChain, isEVMChain, isTerraChain, toChainId, toChainName } from "@certusone/wormhole-sdk/lib/cjs/utils/consts";
-
-setDefaultWasm("node");
 
 if (isOutdated()) {
   console.error(
@@ -45,13 +42,13 @@ const GOVERNANCE_CHAIN = 1;
 const GOVERNANCE_EMITTER =
   "0000000000000000000000000000000000000000000000000000000000000004";
 
-// TODO: remove this once the aptos SDK changes are merged in
 const OVERRIDES = {
   MAINNET: {
     aptos: {
       token_bridge:
         "0x576410486a2da45eee6c949c995670112ddf2fbeedab20350d506328eefc9d4f",
       core: "0x5bc11445584a763c1fa7ed39081f1b920954da14e04b32440cba863d03e19625",
+      nft_bridge: "0x1bdffae984043833ed7fe223f7af7a3f8902d04129b14f801823e64827da7130",
     },
   },
   TESTNET: {
@@ -59,6 +56,7 @@ const OVERRIDES = {
       token_bridge:
         "0x576410486a2da45eee6c949c995670112ddf2fbeedab20350d506328eefc9d4f",
       core: "0x5bc11445584a763c1fa7ed39081f1b920954da14e04b32440cba863d03e19625",
+      nft_bridge: "0x1bdffae984043833ed7fe223f7af7a3f8902d04129b14f801823e64827da7130",
     },
   },
   DEVNET: {
@@ -66,6 +64,7 @@ const OVERRIDES = {
       token_bridge:
         "0x84a5f374d29fc77e370014dce4fd6a55b58ad608de8074b0be5571701724da31",
       core: "0xde0036a9600559e295d5f6802ef6f3f802f510366e0c23912b0655d972166017",
+      nft_bridge: "0x46da3d4c569388af61f951bdd1153f4c875f90c2991f6b2d0a38e2161a40852c"
     },
   },
 };
@@ -886,6 +885,8 @@ yargs(hideBin(process.argv))
         );
       } else if (chain === "wormchain") {
         throw Error("Wormchain is not supported yet");
+      } else if (chain === "btc") {
+        throw Error("BTC is not supported yet")
       } else {
         // If you get a type error here, hover over `chain`'s type and it tells you
         // which cases are not handled
@@ -931,6 +932,8 @@ function parseAddress(chain: ChainName, address: string): string {
   } else if (chain === "wormchain") {
     const sdk = require("@certusone/wormhole-sdk/lib/cjs/utils/array")
     return "0x" + sdk.tryNativeToHexString(address, chain);
+  } else if (chain == "btc") {
+    throw Error("BTC is not supported yet")
   } else {
     impossible(chain);
   }
