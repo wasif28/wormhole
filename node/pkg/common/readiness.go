@@ -30,4 +30,5 @@ const (
 	ReadinessOptimismSyncing  readiness.Component = "optimismSyncing"
 	ReadinessBaseSyncing      readiness.Component = "baseSyncing"
 	ReadinessWormchainSyncing readiness.Component = "wormchainSyncing"
+	ReadinessIBCSyncing       readiness.Component = "IBCSyncing"
 )
