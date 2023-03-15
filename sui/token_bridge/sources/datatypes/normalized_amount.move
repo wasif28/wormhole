@@ -1,24 +1,20 @@
-/// Amounts in represented in token bridge VAAs are capped at 8 decimals. This
-/// means that any amount that's given as having more decimals is truncated to 8
-/// decimals. On the way out, these amount have to be scaled back to the
-/// original decimal amount. This module defines `NormalizedAmount`, which
-/// represents amounts that have been capped at 8 decimals.
-///
-/// The functions `normalize` and `denormalize` take care of convertion to/from
-/// this type given the original amount's decimals.
+// SPDX-License-Identifier: Apache 2
+
+/// This module implements a container that stores the token transfer amount
+/// encoded in a Token Bridge message. These amounts are capped at 8 decimals.
+/// This means that any amount of a coin whose metadata defines its decimals
+/// as some value greater than 8, the encoded amount will be normalized to
+/// eight decimals (which will lead to some residual amount after the transfer).
+/// For inbound transfers, this amount will be denormalized (scaled by the same
+/// decimal difference).
 module token_bridge::normalized_amount {
     use sui::math::{Self};
-    use wormhole::cursor::{Cursor};
     use wormhole::bytes::{Self};
+    use wormhole::cursor::{Cursor};
 
+    /// Container holding the value decoded from a Token Bridge transfer.
     struct NormalizedAmount has store, copy, drop {
         value: u64
-    }
-
-    public fun new(value: u64): NormalizedAmount {
-        NormalizedAmount {
-            value
-        }
     }
 
     public fun default(): NormalizedAmount {
@@ -33,28 +29,23 @@ module token_bridge::normalized_amount {
         (self.value as u256)
     }
 
-    public fun from_u256(value: u256): NormalizedAmount {
-        assert!(value < (1u256 << 64), 0);
-        new((value as u64))
-    }
-
     public fun from_raw(amount: u64, decimals: u8): NormalizedAmount {
         if (amount == 0) {
             default()
         } else {
-            let normalized = {
+            let norm = {
                 if (decimals > 8) {
                     amount / math::pow(10, decimals - 8)
                 } else {
                     amount
                 }
             };
-            new(normalized)
+            new(norm)
         }
     }
 
-    public fun to_raw(normalized: NormalizedAmount, decimals: u8): u64 {
-        let NormalizedAmount { value } = normalized;
+    public fun to_raw(norm: NormalizedAmount, decimals: u8): u64 {
+        let NormalizedAmount { value } = norm;
          if (value > 0 && decimals > 8) {
             value * math::pow(10, decimals - 8)
          } else {
@@ -62,13 +53,24 @@ module token_bridge::normalized_amount {
          }
     }
 
-    public fun deserialize_be(cur: &mut Cursor<u8>): NormalizedAmount {
-        // in the VAA wire format, amounts are 32 bytes.
+    public fun take_bytes(cur: &mut Cursor<u8>): NormalizedAmount {
+        // Amounts are encoded with 32 bytes.
         from_u256(bytes::take_u256_be(cur))
     }
 
-    public fun serialize_be(buf: &mut vector<u8>, normalized: NormalizedAmount) {
-        bytes::push_u256_be(buf, to_u256(&normalized))
+    public fun push_u256_be(buf: &mut vector<u8>, norm: NormalizedAmount) {
+        bytes::push_u256_be(buf, to_u256(&norm))
+    }
+
+    fun new(value: u64): NormalizedAmount {
+        NormalizedAmount {
+            value
+        }
+    }
+
+    fun from_u256(value: u256): NormalizedAmount {
+        assert!(value < (1u256 << 64), 0);
+        new((value as u64))
     }
 }
 
