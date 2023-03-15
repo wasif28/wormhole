@@ -1,5 +1,6 @@
 module token_bridge::complete_transfer {
-    use sui::tx_context::{TxContext};
+    use std::option::{Self, Option};
+    use sui::tx_context::{Self, TxContext};
     use sui::coin::{Self, Coin};
 
     use wormhole::state::{State as WormholeState};
@@ -7,7 +8,6 @@ module token_bridge::complete_transfer {
 
     use token_bridge::normalized_amount::{Self, NormalizedAmount};
     use token_bridge::state::{Self, State};
-    use token_bridge::token_info::{Self};
     use token_bridge::transfer::{Self, Transfer};
     use token_bridge::vaa::{Self};
 
@@ -24,33 +24,31 @@ module token_bridge::complete_transfer {
     /// After processing the token transfer payload, coins are sent to the
     /// encoded recipient. If the specified `relayer` differs from this
     /// recipient, a relayer fee is split from this coin and sent to `relayer`.
-    public entry fun complete_transfer<CoinType>(
+    public fun complete_transfer<CoinType>(
         token_bridge_state: &mut State,
-        worm_state: &mut WormholeState,
-        vaa: vector<u8>,
-        relayer: address,
+        worm_state: &WormholeState,
+        vaa_buf: vector<u8>,
         ctx: &mut TxContext
-    ) {
+    ): Option<Coin<CoinType>> {
         // Parse and verify Token Bridge transfer message. This method
         // guarantees that a verified transfer message cannot be redeemed again.
-        let transfer_vaa =
-            vaa::parse_verify_and_replay_protect(
+        let parsed_vaa =
+            vaa::parse_verify_and_consume(
                 token_bridge_state,
                 worm_state,
-                vaa,
+                vaa_buf,
                 ctx
             );
 
         // Deserialize transfer message and process.
         handle_complete_transfer<CoinType>(
             token_bridge_state,
-            &transfer::deserialize(wormhole::vaa::take_payload(transfer_vaa)),
-            relayer,
+            transfer::deserialize(wormhole::vaa::take_payload(parsed_vaa)),
             ctx
         )
     }
 
-    /// `verify_transfer_details` is only friendly with this module and the
+    /// `verify_and_take_coin` is only friendly with this module and the
     /// `complete_transfer` module. For inbound transfers, the deserialized
     /// transfer message needs to be validated.
     ///
@@ -60,7 +58,7 @@ module token_bridge::complete_transfer {
     /// Depending on whether this coin is a Token Bridge wrapped asset or a
     /// natively existing asset on Sui, the coin is either minted or withdrawn
     /// from Token Bridge's custody.
-    public(friend) fun verify_transfer_details<CoinType>(
+    public(friend) fun verify_and_take_coin<CoinType>(
         token_bridge_state: &mut State,
         token_chain: u16,
         token_address: ExternalAddress,
@@ -74,82 +72,77 @@ module token_bridge::complete_transfer {
             E_INVALID_TARGET
         );
 
-        // Get info about the transferred token.
-        let info = state::token_info<CoinType>(token_bridge_state);
-
         // Verify that the token info agrees with the info encoded in this
         // transfer.
-        assert!(
-            token_info::equals(&info, token_chain, token_address),
-            E_UNREGISTERED_TOKEN
+        state::assert_registered_token<CoinType>(
+            token_bridge_state,
+            token_chain,
+            token_address
         );
 
         let decimals = state::coin_decimals<CoinType>(token_bridge_state);
 
         // If the token is wrapped by Token Bridge, we will mint these tokens.
         // Otherwise, we will withdraw from custody.
-        let token_coin = {
-            if (token_info::is_wrapped(&info)) {
-                state::mint<CoinType>(
-                    token_bridge_state,
-                    normalized_amount::to_raw(amount, decimals),
-                    ctx
-                )
-            } else {
-                state::withdraw<CoinType>(
-                    token_bridge_state,
-                    normalized_amount::to_raw(amount, decimals),
-                    ctx
-                )
-            }
-        };
+        let token_coin =
+            state::put_into_circulation(
+                token_bridge_state,
+                normalized_amount::to_raw(amount, decimals),
+                ctx
+            );
 
         (token_coin, decimals)
     }
 
     fun handle_complete_transfer<CoinType>(
         token_bridge_state: &mut State,
-        parsed_transfer: &Transfer,
-        relayer: address,
+        parsed_transfer: Transfer,
         ctx: &mut TxContext
-    ) {
-        let (my_coins, decimals) =
-            verify_transfer_details<CoinType>(
+    ): Option<Coin<CoinType>> {
+        let (
+            amount,
+            token_address,
+            token_chain,
+            recipient,
+            recipient_chain,
+            relayer_fee
+        ) = transfer::unpack(parsed_transfer);
+
+        let (bridged, decimals) =
+            verify_and_take_coin<CoinType>(
                 token_bridge_state,
-                transfer::token_chain(parsed_transfer),
-                transfer::token_address(parsed_transfer),
-                transfer::recipient_chain(parsed_transfer),
-                transfer::amount(parsed_transfer),
+                token_chain,
+                token_address,
+                recipient_chain,
+                amount,
                 ctx
             );
 
-        let recipient =
-            external_address::to_address(
-                transfer::recipient(parsed_transfer)
-            );
+        let recipient = external_address::to_address(recipient);
 
         // If the recipient did not redeem his own transfer, Token Bridge will
         // split the withdrawn coins and send a portion to the transaction
         // relayer.
-        if (recipient != relayer) {
-            let fee =
-                normalized_amount::to_raw(
-                    transfer::relayer_fee(parsed_transfer),
-                    decimals
-                );
-            sui::transfer::transfer(
-                coin::split(&mut my_coins, fee, ctx),
-                relayer
-            );
+        let payout = if (
+            normalized_amount::value(&relayer_fee) == 0 ||
+            recipient == tx_context::sender(ctx)
+        ) {
+            option::none()
+        } else {
+            let raw_amount = normalized_amount::to_raw(relayer_fee, decimals);
+            option::some(coin::split(&mut bridged, raw_amount, ctx))
         };
 
         // Finally transfer tokens to the recipient.
-        sui::transfer::transfer(my_coins, recipient);
+        sui::transfer::transfer(bridged, recipient);
+
+        payout
     }
 }
 
 #[test_only]
 module token_bridge::complete_transfer_test {
+    use std::option::{Self};
     use sui::test_scenario::{Self, Scenario, next_tx, return_shared,
         take_shared, ctx, take_from_address, return_to_address};
     use sui::coin::{Self, Coin, CoinMetadata};
@@ -194,7 +187,7 @@ module token_bridge::complete_transfer_test {
     /// An end-to-end test for complete transer native with VAA.
     fun test_complete_native_transfer_10_decimals(){
         {
-        let (admin, fee_recipient_person, _) = people();
+        let (admin, tx_relayer, _) = people();
         let test = scenario();
         test = set_up_wormhole_core_and_token_bridges(admin, test);
         // Create coin.
@@ -214,7 +207,7 @@ module token_bridge::complete_transfer_test {
             let bridge_state = take_shared<State>(&test);
             let worm_state = take_shared<WormholeState>(&test);
             let coin_meta = take_shared<CoinMetadata<NATIVE_COIN_10_DECIMALS>>(&test);
-            state::register_native_asset<NATIVE_COIN_10_DECIMALS>(
+            state::register_native_asset_test_only(
                 &mut bridge_state,
                 &coin_meta,
             );
@@ -229,24 +222,27 @@ module token_bridge::complete_transfer_test {
             let worm_state = take_shared<WormholeState>(&test);
             let t_cap = take_shared<coin::TreasuryCap<NATIVE_COIN_10_DECIMALS>>(&test);
             let coins = coin::mint<NATIVE_COIN_10_DECIMALS>(&mut t_cap, 10000000000, ctx(&mut test));
-            state::deposit<NATIVE_COIN_10_DECIMALS>(&mut bridge_state, coins);
+            state::take_from_circulation_test_only<NATIVE_COIN_10_DECIMALS>(&mut bridge_state, coins);
             return_shared<coin::TreasuryCap<NATIVE_COIN_10_DECIMALS>>(t_cap);
             return_shared<State>(bridge_state);
             return_shared<WormholeState>(worm_state);
         };
 
         // Complete transfer, sending native tokens to a recipient address.
-        next_tx(&mut test, admin); {
+        next_tx(&mut test, tx_relayer); {
             let bridge_state = take_shared<State>(&test);
             let worm_state = take_shared<WormholeState>(&test);
 
-            complete_transfer::complete_transfer<NATIVE_COIN_10_DECIMALS>(
+            let payout = complete_transfer::complete_transfer<NATIVE_COIN_10_DECIMALS>(
                 &mut bridge_state,
                 &mut worm_state,
                 VAA_NATIVE_TRANSFER,
-                fee_recipient_person,
                 ctx(&mut test)
             );
+            assert!(option::is_some(&payout), 0);
+            let payout = option::destroy_some(payout);
+            assert!(coin::value(&payout) == 100000, 0);
+            coin::destroy_for_testing(payout);
             return_shared<State>(bridge_state);
             return_shared<WormholeState>(worm_state);
         };
@@ -254,12 +250,8 @@ module token_bridge::complete_transfer_test {
         // Check balances after.
         next_tx(&mut test, admin);{
             let coins = take_from_address<Coin<NATIVE_COIN_10_DECIMALS>>(&test, admin);
-            assert!(coin::value<NATIVE_COIN_10_DECIMALS>(&coins) == 200000, 0);
-            return_to_address<Coin<NATIVE_COIN_10_DECIMALS>>(admin, coins);
-
-            let fee_coins = take_from_address<Coin<NATIVE_COIN_10_DECIMALS>>(&test, fee_recipient_person);
-            assert!(coin::value<NATIVE_COIN_10_DECIMALS>(&fee_coins) == 100000, 0);
-            return_to_address<Coin<NATIVE_COIN_10_DECIMALS>>(fee_recipient_person, fee_coins);
+            assert!(coin::value(&coins) == 200000, 0);
+            return_to_address(admin, coins);
         };
         test_scenario::end(test);
     }
@@ -269,7 +261,7 @@ module token_bridge::complete_transfer_test {
     /// An end-to-end test for complete transer native with VAA.
     fun test_complete_native_transfer_4_decimals(){
         {
-        let (admin, fee_recipient_person, _) = people();
+        let (admin, tx_relayer, _) = people();
         let test = scenario();
         test = set_up_wormhole_core_and_token_bridges(admin, test);
         // Create coin.
@@ -289,7 +281,7 @@ module token_bridge::complete_transfer_test {
             let bridge_state = take_shared<State>(&test);
             let worm_state = take_shared<WormholeState>(&test);
             let coin_meta = take_shared<CoinMetadata<NATIVE_COIN_4_DECIMALS>>(&test);
-            state::register_native_asset<NATIVE_COIN_4_DECIMALS>(
+            state::register_native_asset_test_only(
                 &mut bridge_state,
                 &coin_meta,
             );
@@ -304,24 +296,27 @@ module token_bridge::complete_transfer_test {
             let worm_state = take_shared<WormholeState>(&test);
             let t_cap = take_shared<coin::TreasuryCap<NATIVE_COIN_4_DECIMALS>>(&test);
             let coins = coin::mint<NATIVE_COIN_4_DECIMALS>(&mut t_cap, 10000000000, ctx(&mut test));
-            state::deposit<NATIVE_COIN_4_DECIMALS>(&mut bridge_state, coins);
+            state::take_from_circulation_test_only<NATIVE_COIN_4_DECIMALS>(&mut bridge_state, coins);
             return_shared<coin::TreasuryCap<NATIVE_COIN_4_DECIMALS>>(t_cap);
             return_shared<State>(bridge_state);
             return_shared<WormholeState>(worm_state);
         };
 
         // Complete transfer, sending native tokens to a recipient address.
-        next_tx(&mut test, admin); {
+        next_tx(&mut test, tx_relayer); {
             let bridge_state = take_shared<State>(&test);
             let worm_state = take_shared<WormholeState>(&test);
 
-            complete_transfer::complete_transfer<NATIVE_COIN_4_DECIMALS>(
+            let payout = complete_transfer::complete_transfer<NATIVE_COIN_4_DECIMALS>(
                 &mut bridge_state,
-                &mut worm_state,
+                &worm_state,
                 VAA_NATIVE_TRANSFER,
-                fee_recipient_person,
                 ctx(&mut test)
             );
+            assert!(option::is_some(&payout), 0);
+            let payout = option::destroy_some(payout);
+            assert!(coin::value(&payout) == 1000, 0);
+            coin::destroy_for_testing(payout);
             return_shared<State>(bridge_state);
             return_shared<WormholeState>(worm_state);
         };
@@ -331,23 +326,13 @@ module token_bridge::complete_transfer_test {
             let coins = take_from_address<Coin<NATIVE_COIN_4_DECIMALS>>(&test, admin);
             assert!(coin::value<NATIVE_COIN_4_DECIMALS>(&coins) == 2000, 0);
             return_to_address<Coin<NATIVE_COIN_4_DECIMALS>>(admin, coins);
-
-            let fee_coins = take_from_address<Coin<NATIVE_COIN_4_DECIMALS>>(&test, fee_recipient_person);
-            assert!(coin::value<NATIVE_COIN_4_DECIMALS>(&fee_coins) == 1000, 0);
-            return_to_address<Coin<NATIVE_COIN_4_DECIMALS>>(fee_recipient_person, fee_coins);
         };
         test_scenario::end(test);
     }
     }
 
     #[test]
-    #[expected_failure(
-        abort_code = token_bridge::complete_transfer::E_UNREGISTERED_TOKEN,
-        location=token_bridge::complete_transfer
-    )]
-    /// A negative test for the internal function handle_complete_transfer.
-    /// Test that transfer fails if the origin chain is not specified correctly,
-    /// causing the bridge to think that the token is unregistered.
+    #[expected_failure(abort_code = state::E_UNREGISTERED_TOKEN)]
     fun test_complete_native_transfer_wrong_origin_chain(){
         let wrong_origin_chain_vaa = x"01000000000100b0d67f0102856458dc68a29e88e5574f4b0b129841522066adbf275f0749129a319bc6a94a7b7c8822e91e1ceb2b1e22adee0d283fba5b97dab5f7165216785e010000000000000000000200000000000000000000000000000000000000000000000000000000deadbeef00000000000000010f01000000000000000000000000000000000000000000000000000000003b9aca4f00000000000000000000000000000000000000000000000000000000000000010017000000000000000000000000000000000000000000000000000000000012432300150000000000000000000000000000000000000000000000000000000005f5e100";
         // ============================ VAA details ============================
@@ -362,7 +347,7 @@ module token_bridge::complete_transfer_test {
         // chain: 21,
         // fee: 100000000n
         // ============================ VAA details ============================
-        let (admin, fee_recipient_person, _) = people();
+        let (admin, _, _) = people();
         let test = scenario();
         test = set_up_wormhole_core_and_token_bridges(admin, test);
         next_tx(&mut test, admin);{
@@ -381,9 +366,9 @@ module token_bridge::complete_transfer_test {
             let coin_meta = take_shared<CoinMetadata<NATIVE_COIN_10_DECIMALS>>(&test);
             let bridge_state = take_shared<State>(&test);
             let worm_state = take_shared<WormholeState>(&test);
-            state::register_native_asset<NATIVE_COIN_10_DECIMALS>(
+            state::register_native_asset_test_only(
                 &mut bridge_state,
-                &coin_meta
+                &coin_meta,
             );
             native_coin_10_decimals::test_init(ctx(&mut test));
             return_shared<CoinMetadata<NATIVE_COIN_10_DECIMALS>>(coin_meta);
@@ -402,7 +387,7 @@ module token_bridge::complete_transfer_test {
                     10000000000, // amount
                     ctx(&mut test)
                 );
-            state::deposit<NATIVE_COIN_10_DECIMALS>(&mut bridge_state, coins);
+            state::take_from_circulation_test_only<NATIVE_COIN_10_DECIMALS>(&mut bridge_state, coins);
             return_shared<coin::TreasuryCap<NATIVE_COIN_10_DECIMALS>>(t_cap);
             return_shared<State>(bridge_state);
             return_shared<WormholeState>(worm_state);
@@ -414,13 +399,13 @@ module token_bridge::complete_transfer_test {
             let bridge_state = take_shared<State>(&test);
             let worm_state = take_shared<WormholeState>(&test);
 
-            complete_transfer::complete_transfer<NATIVE_COIN_10_DECIMALS>(
+            let payout = complete_transfer::complete_transfer<NATIVE_COIN_10_DECIMALS>(
                 &mut bridge_state,
                 &mut worm_state,
                 wrong_origin_chain_vaa,
-                fee_recipient_person,
                 ctx(&mut test)
             );
+            option::destroy_none(payout);
             return_shared<State>(bridge_state);
             return_shared<WormholeState>(worm_state);
         };
@@ -428,10 +413,7 @@ module token_bridge::complete_transfer_test {
     }
 
     #[test]
-    #[expected_failure(
-        abort_code = token_bridge::complete_transfer::E_UNREGISTERED_TOKEN,
-        location=token_bridge::complete_transfer
-    )]
+    #[expected_failure(abort_code = state::E_UNREGISTERED_TOKEN)]
     fun test_complete_native_transfer_wrong_coin_address(){
         let vaa_transfer_wrong_address = x"010000000001008490d3e139f3b705282df4686907dfff358dd365e7471d8d6793ade61a27d33d48fc665198bc8022bebd8f8a91f29b3df75455180bf3b2d39eb97f93be3a8caf000000000000000000000200000000000000000000000000000000000000000000000000000000deadbeef00000000000000010f01000000000000000000000000000000000000000000000000000000003b9aca4f00000000000000000000000000000000000000000000000000000000000004440015000000000000000000000000000000000000000000000000000000000012432300150000000000000000000000000000000000000000000000000000000005f5e100";
         // ============================ VAA details ============================
@@ -448,7 +430,7 @@ module token_bridge::complete_transfer_test {
         //   chain: 21,
         //   fee: 100000000n
         // ============================ VAA details ============================
-        let (admin, fee_recipient_person, _) = people();
+        let (admin, _, _) = people();
         let test = scenario();
         test = set_up_wormhole_core_and_token_bridges(admin, test);
         next_tx(&mut test, admin);{
@@ -467,7 +449,7 @@ module token_bridge::complete_transfer_test {
             let bridge_state = take_shared<State>(&test);
             let worm_state = take_shared<WormholeState>(&test);
             let coin_meta = take_shared<CoinMetadata<NATIVE_COIN_10_DECIMALS>>(&test);
-            state::register_native_asset<NATIVE_COIN_10_DECIMALS>(
+            state::register_native_asset_test_only(
                 &mut bridge_state,
                 &coin_meta,
             );
@@ -483,7 +465,7 @@ module token_bridge::complete_transfer_test {
             let worm_state = take_shared<WormholeState>(&test);
             let t_cap = take_shared<coin::TreasuryCap<NATIVE_COIN_10_DECIMALS>>(&test);
             let coins = coin::mint<NATIVE_COIN_10_DECIMALS>(&mut t_cap, 10000000000, ctx(&mut test));
-            state::deposit<NATIVE_COIN_10_DECIMALS>(&mut bridge_state, coins);
+            state::take_from_circulation_test_only<NATIVE_COIN_10_DECIMALS>(&mut bridge_state, coins);
             return_shared<coin::TreasuryCap<NATIVE_COIN_10_DECIMALS>>(t_cap);
             return_shared<State>(bridge_state);
             return_shared<WormholeState>(worm_state);
@@ -493,14 +475,13 @@ module token_bridge::complete_transfer_test {
             let bridge_state = take_shared<State>(&test);
             let worm_state = take_shared<WormholeState>(&test);
 
-            complete_transfer::complete_transfer<NATIVE_COIN_10_DECIMALS>(
+            let payout = complete_transfer::complete_transfer<NATIVE_COIN_10_DECIMALS>(
                 &mut bridge_state,
                 &mut worm_state,
                 vaa_transfer_wrong_address,
-                fee_recipient_person,
                 ctx(&mut test)
             );
-
+            option::destroy_none(payout);
             return_shared<State>(bridge_state);
             return_shared<WormholeState>(worm_state);
         };
@@ -523,7 +504,7 @@ module token_bridge::complete_transfer_test {
         //   chain: 21,
         //   fee: 10000000000000n // Wrong! Way too much fee!
         // ============================ VAA details ============================
-        let (admin, fee_recipient_person, _) = people();
+        let (admin, tx_relayer, _) = people();
         let test = scenario();
         test = set_up_wormhole_core_and_token_bridges(admin, test);
         next_tx(&mut test, admin);{
@@ -542,7 +523,7 @@ module token_bridge::complete_transfer_test {
             let bridge_state = take_shared<State>(&test);
             let worm_state = take_shared<WormholeState>(&test);
             let coin_meta = take_shared<CoinMetadata<NATIVE_COIN_10_DECIMALS>>(&test);
-            state::register_native_asset<NATIVE_COIN_10_DECIMALS>(
+            state::register_native_asset_test_only(
                 &mut bridge_state,
                 &coin_meta,
             );
@@ -558,24 +539,23 @@ module token_bridge::complete_transfer_test {
             let worm_state = take_shared<WormholeState>(&test);
             let t_cap = take_shared<coin::TreasuryCap<NATIVE_COIN_10_DECIMALS>>(&test);
             let coins = coin::mint<NATIVE_COIN_10_DECIMALS>(&mut t_cap, 10000000000, ctx(&mut test));
-            state::deposit<NATIVE_COIN_10_DECIMALS>(&mut bridge_state, coins);
+            state::take_from_circulation_test_only<NATIVE_COIN_10_DECIMALS>(&mut bridge_state, coins);
             return_shared<coin::TreasuryCap<NATIVE_COIN_10_DECIMALS>>(t_cap);
             return_shared<State>(bridge_state);
             return_shared<WormholeState>(worm_state);
         };
         // attempt complete transfer
-        next_tx(&mut test, admin); {
+        next_tx(&mut test, tx_relayer); {
             let bridge_state = take_shared<State>(&test);
             let worm_state = take_shared<WormholeState>(&test);
 
-            complete_transfer::complete_transfer<NATIVE_COIN_10_DECIMALS>(
+            let payout = complete_transfer::complete_transfer<NATIVE_COIN_10_DECIMALS>(
                 &mut bridge_state,
                 &mut worm_state,
                 vaa_transfer_too_much_fee,
-                fee_recipient_person,
                 ctx(&mut test)
             );
-
+            option::destroy_none(payout);
             return_shared<State>(bridge_state);
             return_shared<WormholeState>(worm_state);
         };
@@ -592,7 +572,7 @@ module token_bridge::complete_transfer_test {
     /// to not recignize that coin as being registered and for
     /// the complete transfer to fail.
     fun test_complete_native_transfer_wrong_coin(){
-        let (admin, fee_recipient_person, _) = people();
+        let (admin, _, _) = people();
         let test = scenario();
         test = set_up_wormhole_core_and_token_bridges(admin, test);
         // Register eth token bridge (where transfer VAA will originate from)
@@ -615,7 +595,7 @@ module token_bridge::complete_transfer_test {
             let bridge_state = take_shared<State>(&test);
             let worm_state = take_shared<WormholeState>(&test);
             let coin_meta = take_shared<CoinMetadata<NATIVE_COIN_10_DECIMALS>>(&test);
-            state::register_native_asset<NATIVE_COIN_10_DECIMALS>(
+            state::register_native_asset_test_only(
                 &mut bridge_state,
                 &coin_meta,
             );
@@ -631,7 +611,7 @@ module token_bridge::complete_transfer_test {
             let worm_state = take_shared<WormholeState>(&test);
             let t_cap = take_shared<coin::TreasuryCap<NATIVE_COIN_10_DECIMALS>>(&test);
             let coins = coin::mint<NATIVE_COIN_10_DECIMALS>(&mut t_cap, 10000000000, ctx(&mut test));
-            state::deposit<NATIVE_COIN_10_DECIMALS>(&mut bridge_state, coins);
+            state::take_from_circulation_test_only<NATIVE_COIN_10_DECIMALS>(&mut bridge_state, coins);
             return_shared<coin::TreasuryCap<NATIVE_COIN_10_DECIMALS>>(t_cap);
             return_shared<State>(bridge_state);
             return_shared<WormholeState>(worm_state);
@@ -642,14 +622,13 @@ module token_bridge::complete_transfer_test {
             let bridge_state = take_shared<State>(&test);
             let worm_state = take_shared<WormholeState>(&test);
 
-            complete_transfer::complete_transfer<NATIVE_COIN_4_DECIMALS>(
+            let payout = complete_transfer::complete_transfer<NATIVE_COIN_4_DECIMALS>(
                 &mut bridge_state,
                 &mut worm_state,
                 VAA_NATIVE_TRANSFER,
-                fee_recipient_person,
                 ctx(&mut test)
             );
-
+            option::destroy_none(payout);
             return_shared<State>(bridge_state);
             return_shared<WormholeState>(worm_state);
         };
@@ -687,13 +666,14 @@ module token_bridge::complete_transfer_test {
             let bridge_state = take_shared<State>(&test);
             let worm_state = take_shared<WormholeState>(&test);
 
-            complete_transfer::complete_transfer<WRAPPED_COIN_12_DECIMALS>(
+            let payout = complete_transfer::complete_transfer<WRAPPED_COIN_12_DECIMALS>(
                 &mut bridge_state,
                 &mut worm_state,
                 vaa,
-                @0x0, // relayer
                 ctx(&mut test)
             );
+            assert!(option::is_none(&payout), 0);
+            option::destroy_none(payout);
             return_shared<State>(bridge_state);
             return_shared<WormholeState>(worm_state);
         };
@@ -725,7 +705,7 @@ module token_bridge::complete_transfer_test {
         // chain: 21,
         // fee: 1000n
         // ============================ VAA details ============================
-        let (admin, fee_recipient_person, _) = people();
+        let (admin, tx_relayer, _) = people();
         let scenario = scenario();
         // First register foreign chain, create wrapped asset, register wrapped asset.
         let test = test_register_wrapped_(admin, scenario);
@@ -733,17 +713,20 @@ module token_bridge::complete_transfer_test {
             wrapped_coin_12_decimals::test_init(ctx(&mut test));
         };
         // Complete transfer of wrapped asset from foreign chain to this chain.
-        next_tx(&mut test, admin); {
+        next_tx(&mut test, tx_relayer); {
             let bridge_state = take_shared<State>(&test);
             let worm_state = take_shared<WormholeState>(&test);
 
-            complete_transfer::complete_transfer<WRAPPED_COIN_12_DECIMALS>(
+            let payout = complete_transfer::complete_transfer<WRAPPED_COIN_12_DECIMALS>(
                 &mut bridge_state,
                 &mut worm_state,
                 vaa,
-                fee_recipient_person, // relayer
                 ctx(&mut test)
             );
+            assert!(option::is_some(&payout), 0);
+            let payout = option::destroy_some(payout);
+            assert!(coin::value(&payout) == 1000, 0);
+            coin::destroy_for_testing(payout);
             return_shared<State>(bridge_state);
             return_shared<WormholeState>(worm_state);
         };
@@ -753,10 +736,6 @@ module token_bridge::complete_transfer_test {
             let coins = take_from_address<Coin<WRAPPED_COIN_12_DECIMALS>>(&test, admin);
             assert!(coin::value<WRAPPED_COIN_12_DECIMALS>(&coins) == 2000, 0);
             return_to_address<Coin<WRAPPED_COIN_12_DECIMALS>>(admin, coins);
-
-            let fee_coins = take_from_address<Coin<WRAPPED_COIN_12_DECIMALS>>(&test, fee_recipient_person);
-            assert!(coin::value<WRAPPED_COIN_12_DECIMALS>(&fee_coins) == 1000, 0);
-            return_to_address<Coin<WRAPPED_COIN_12_DECIMALS>>(fee_recipient_person, fee_coins);
         };
         test_scenario::end(test);
     }

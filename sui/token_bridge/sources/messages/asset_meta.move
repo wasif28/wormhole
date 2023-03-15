@@ -8,7 +8,6 @@ module token_bridge::asset_meta {
 
     use token_bridge::string32::{Self, String32};
 
-    friend token_bridge::state;
     friend token_bridge::create_wrapped;
     #[test_only]
     friend token_bridge::asset_meta_test;
@@ -30,7 +29,7 @@ module token_bridge::asset_meta {
         name: String32,
     }
 
-    public(friend) fun new(
+    public fun new(
         token_chain: u16,
         token_address: ExternalAddress,
         native_decimals: u8,

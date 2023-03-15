@@ -1,22 +1,25 @@
 module token_bridge::attest_token {
-    use sui::sui::SUI;
-    use sui::coin::{Coin, CoinMetadata};
-
+    use std::ascii::{Self};
+    use sui::coin::{Self, Coin, CoinMetadata};
+    use sui::sui::{SUI};
     use wormhole::state::{State as WormholeState};
 
-    use token_bridge::state::{Self, State};
     use token_bridge::asset_meta::{Self, AssetMeta};
+    use token_bridge::state::{Self, State};
+    use token_bridge::string32::{Self};
 
-    public entry fun attest_token<CoinType>(
+    const E_REGISTERED_WRAPPED_ASSET: u64 = 0;
+
+    public fun attest_token<CoinType>(
         token_bridge_state: &mut State,
         worm_state: &mut WormholeState,
-        coin_meta: &CoinMetadata<CoinType>,
-        fee_coins: Coin<SUI>,
+        coin_metadata: &CoinMetadata<CoinType>,
+        wormhole_fee: Coin<SUI>,
         nonce: u32,
-    ) {
+    ): u64 {
         let asset_meta = handle_attest_token(
             token_bridge_state,
-            coin_meta,
+            coin_metadata,
         );
 
         state::publish_wormhole_message(
@@ -24,17 +27,45 @@ module token_bridge::attest_token {
             worm_state,
             nonce,
             asset_meta::serialize(asset_meta),
-            fee_coins
-        );
+            wormhole_fee
+        )
     }
 
     fun handle_attest_token<CoinType>(
         token_bridge_state: &mut State,
-        coin_metadata: &CoinMetadata<CoinType>,
+        metadata: &CoinMetadata<CoinType>,
     ): AssetMeta {
-        state::register_native_asset<CoinType>(
-            token_bridge_state,
-            coin_metadata,
+        // Register if it is a new asset.
+        //
+        // NOTE: We don't want to abort if the asset is already registered
+        // because we may want to send asset metadata again after registration
+        // (the owner of a particular `CoinType` can change `CoinMetadata` any
+        // time after we register the asset).
+        if (state::is_registered_asset<CoinType>(token_bridge_state)) {
+            // If this asset is already registered, make sure it is not a
+            // Token Bridge wrapped asset.
+            assert!(
+                state::is_native_asset<CoinType>(token_bridge_state),
+                E_REGISTERED_WRAPPED_ASSET
+            )
+        } else {
+            state::register_native_asset(token_bridge_state, metadata);
+        };
+
+        // Get canonical token info.
+        let (
+            token_chain,
+            token_address
+        ) = state::token_info<CoinType>(token_bridge_state);
+
+        asset_meta::new(
+            token_chain,
+            token_address,
+            state::coin_decimals<CoinType>(token_bridge_state),
+            string32::from_bytes(
+                ascii::into_bytes(coin::get_symbol(metadata))
+            ),
+            string32::from_string(&coin::get_name(metadata))
         )
     }
 
@@ -123,44 +154,6 @@ module token_bridge::attest_token_test {
                 state::is_registered_asset<NATIVE_COIN_10_DECIMALS>(&mut bridge_state);
             assert!(is_registered, 0);
             return_shared<State>(bridge_state);
-        };
-        test_scenario::end(test);
-    }
-
-    #[test]
-    #[expected_failure(
-        abort_code = token_bridge::registered_tokens::E_ALREADY_REGISTERED,
-        location=token_bridge::registered_tokens
-    )]
-    /// TODO: consider throwing token bridge error instead of
-    /// sui::dynamic_field.
-    fun test_attest_token_twice_fails(){
-        let test = scenario();
-        let (admin, _, _) = people();
-
-        test = set_up_wormhole_core_and_token_bridges(admin, test);
-
-        next_tx(&mut test, admin); {
-            native_coin_10_decimals::test_init(ctx(&mut test));
-        };
-        next_tx(&mut test, admin); {
-            let wormhole_state = take_shared<WormholeState>(&test);
-            let bridge_state = take_shared<State>(&test);
-            let coin_meta = take_shared<CoinMetadata<NATIVE_COIN_10_DECIMALS>>(&test);
-
-            let _asset_meta_1 = test_handle_attest_token<NATIVE_COIN_10_DECIMALS>(
-                &mut bridge_state,
-                &mut wormhole_state,
-                &coin_meta,
-            );
-            let _asset_meta_2 = test_handle_attest_token<NATIVE_COIN_10_DECIMALS>(
-                &mut bridge_state,
-                &mut wormhole_state,
-                &coin_meta,
-            );
-            return_shared<WormholeState>(wormhole_state);
-            return_shared<State>(bridge_state);
-            return_shared<CoinMetadata<NATIVE_COIN_10_DECIMALS>>(coin_meta);
         };
         test_scenario::end(test);
     }

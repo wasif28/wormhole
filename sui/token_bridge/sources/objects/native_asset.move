@@ -5,11 +5,7 @@ module token_bridge::native_asset {
     use wormhole::external_address::{ExternalAddress};
     use wormhole::state::{chain_id};
 
-    use token_bridge::token_info::{Self, TokenInfo};
-
     friend token_bridge::registered_tokens;
-    #[test_only]
-    friend token_bridge::native_asset_test;
 
     struct NativeAsset<phantom C> has store {
         custody: Balance<C>,
@@ -55,19 +51,26 @@ module token_bridge::native_asset {
         balance::value(&self.custody)
     }
 
-    public fun to_token_info<C>(self: &NativeAsset<C>): TokenInfo<C> {
-        token_info::new(
-            false, // is_wrapped
-            chain_id(),
-            self.token_address
-        )
+    public fun canonical_info<C>(
+        self: &NativeAsset<C>
+    ): (u16, ExternalAddress) {
+        (chain_id(), self.token_address)
     }
+
 
     public(friend) fun deposit<C>(
         self: &mut NativeAsset<C>,
         depositable: Coin<C>
     ) {
         coin::put(&mut self.custody, depositable);
+    }
+
+    #[test_only]
+    public fun deposit_test_only<C>(
+        self: &mut NativeAsset<C>,
+        depositable: Coin<C>
+    ) {
+        deposit(self, depositable)
     }
 
     public(friend) fun withdraw<C>(
@@ -77,6 +80,15 @@ module token_bridge::native_asset {
     ): Coin<C> {
         coin::take(&mut self.custody, amount, ctx)
     }
+
+    #[test_only]
+    public fun withdraw_test_only<C>(
+        self: &mut NativeAsset<C>,
+        amount: u64,
+        ctx: &mut TxContext
+    ): Coin<C> {
+        withdraw(self, amount, ctx)
+    }
 }
 
 #[test_only]
@@ -85,11 +97,9 @@ module token_bridge::native_asset_test {
         return_shared, next_tx};
     use sui::coin::{Self, TreasuryCap};
     use sui::transfer::{Self};
-
     use wormhole::external_address::{Self};
     use wormhole::state::{chain_id};
 
-    use token_bridge::token_info::{Self};
     use token_bridge::native_asset::{Self, new, token_address, decimals};
     use token_bridge::native_coin_10_decimals::{Self, NATIVE_COIN_10_DECIMALS};
 
@@ -124,23 +134,23 @@ module token_bridge::native_asset_test {
 
             // deposit some coins into the NativeAsset coin custody
             let coins = coin::mint<NATIVE_COIN_10_DECIMALS>(&mut tcap, 1000, ctx(&mut test));
-            native_asset::deposit<NATIVE_COIN_10_DECIMALS>(&mut native_asset, coins);
+            native_asset::deposit_test_only<NATIVE_COIN_10_DECIMALS>(&mut native_asset, coins);
 
             // assert new balance is correct
             let bal1 = native_asset::balance<NATIVE_COIN_10_DECIMALS>(&native_asset);
             assert!(bal1==1000, 0);
 
             // convert to token info and assert convrsion is correct
-            let token_info = native_asset::to_token_info<NATIVE_COIN_10_DECIMALS>(
-                &native_asset
-            );
+            let (token_chain, token_address) =
+                native_asset::canonical_info<NATIVE_COIN_10_DECIMALS>(
+                    &native_asset
+                );
 
-            assert!(token_info::chain(&token_info)==chain_id(), 0);
-            assert!(token_info::addr(&token_info)==addr, 0);
-            assert!(token_info::is_wrapped(&token_info)==false, 0);
+            assert!(token_chain == chain_id(), 0);
+            assert!(token_address == addr, 0);
 
             // withdraw half of coins from custody
-            coins = native_asset::withdraw<NATIVE_COIN_10_DECIMALS>(
+            coins = native_asset::withdraw_test_only<NATIVE_COIN_10_DECIMALS>(
                 &mut native_asset,
                 500,
                 ctx(&mut test)
@@ -152,7 +162,7 @@ module token_bridge::native_asset_test {
             assert!(bal2==500, 0);
 
             // withdraw second half of coins from custody
-            coins = native_asset::withdraw<NATIVE_COIN_10_DECIMALS>(
+            coins = native_asset::withdraw_test_only<NATIVE_COIN_10_DECIMALS>(
                 &mut native_asset,
                 500,
                 ctx(&mut test)

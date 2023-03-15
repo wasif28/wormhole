@@ -3,8 +3,6 @@ module token_bridge::wrapped_asset {
     use sui::tx_context::{TxContext};
     use wormhole::external_address::{ExternalAddress};
 
-    use token_bridge::token_info::{Self, TokenInfo};
-
     // For `burn` and `mint`
     friend token_bridge::registered_tokens;
 
@@ -58,12 +56,10 @@ module token_bridge::wrapped_asset {
         self.decimals
     }
 
-    public fun to_token_info<C>(self: &WrappedAsset<C>): TokenInfo<C> {
-        token_info::new(
-            true, // is_wrapped
-            self.token_chain,
-            self.token_address
-        )
+    public fun canonical_info<C>(
+        self: &WrappedAsset<C>
+    ): (u16, ExternalAddress) {
+        (self.token_chain, self.token_address)
     }
 
     public(friend) fun burn<C>(

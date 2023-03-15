@@ -1,50 +1,48 @@
 module token_bridge::transfer_tokens_with_payload {
     use sui::sui::{SUI};
     use sui::coin::{Coin};
-    use wormhole::emitter::{Self, EmitterCap};
+    use wormhole::emitter::{EmitterCap};
     use wormhole::external_address::{ExternalAddress};
     use wormhole::state::{State as WormholeState};
 
     use token_bridge::state::{Self, State};
-    use token_bridge::transfer_result::{Self};
     use token_bridge::transfer_tokens::{handle_transfer_tokens};
     use token_bridge::transfer_with_payload::{Self};
 
     public fun transfer_tokens_with_payload<CoinType>(
+        token_bridge_state: &mut State,
         emitter_cap: &EmitterCap,
-        bridge_state: &mut State,
-        wormhole_state: &mut WormholeState,
-        coins: Coin<CoinType>,
-        wormhole_fee_coins: Coin<SUI>,
+        worm_state: &mut WormholeState,
+        bridged: Coin<CoinType>,
+        wormhole_fee: Coin<SUI>,
         recipient_chain: u16,
         recipient: ExternalAddress,
         nonce: u32,
         payload: vector<u8>,
     ): u64 {
-        let result = handle_transfer_tokens<CoinType>(
-            bridge_state,
-            coins,
-            0,
-        );
-        let (token_chain, token_address, normalized_amount, _)
-            = transfer_result::destroy(result);
-
-        let transfer = transfer_with_payload::new(
-            normalized_amount,
-            token_address,
-            token_chain,
-            recipient,
-            recipient_chain,
-            emitter::addr(emitter_cap),
-            payload
-        );
+        let (token_chain, token_address, norm_amount, _) =
+            handle_transfer_tokens<CoinType>(
+                token_bridge_state,
+                bridged,
+                0,
+            );
+        let transfer =
+            transfer_with_payload::new_from_emitter(
+                emitter_cap,
+                norm_amount,
+                token_address,
+                token_chain,
+                recipient,
+                recipient_chain,
+                payload
+            );
 
         state::publish_wormhole_message(
-            bridge_state,
-            wormhole_state,
+            token_bridge_state,
+            worm_state,
             nonce,
             transfer_with_payload::serialize(transfer),
-            wormhole_fee_coins
+            wormhole_fee
         )
     }
 }
@@ -71,14 +69,13 @@ module token_bridge::transfer_tokens_with_payload_test {
     use token_bridge::bridge_state_test::{
         set_up_wormhole_core_and_token_bridges
     };
-    use token_bridge::create_wrapped::{Self};
+    use token_bridge::create_wrapped::{Self, Unregistered};
     use token_bridge::wrapped_coin_12_decimals::{Self, WRAPPED_COIN_12_DECIMALS};
     use token_bridge::native_coin_4_decimals::{Self, NATIVE_COIN_4_DECIMALS};
     use token_bridge::state::{Self, State};
     use token_bridge::transfer_tokens_with_payload::{
         transfer_tokens_with_payload
     };
-    use token_bridge::wrapped_coin::{WrappedCoin};
 
     fun scenario(): Scenario { test_scenario::begin(@0x123233) }
     fun people(): (address, address, address) { (@0x124323, @0xE05, @0xFACE) }
@@ -98,7 +95,7 @@ module token_bridge::transfer_tokens_with_payload_test {
             let worm_state = take_shared<WormholeState>(&test);
             let coin_meta = take_shared<CoinMetadata<NATIVE_COIN_4_DECIMALS>>(&test);
             let treasury_cap = take_shared<TreasuryCap<NATIVE_COIN_4_DECIMALS>>(&test);
-            state::register_native_asset<NATIVE_COIN_4_DECIMALS>(
+            state::register_native_asset_test_only(
                 &mut bridge_state,
                 &coin_meta,
             );
@@ -117,8 +114,8 @@ module token_bridge::transfer_tokens_with_payload_test {
 
             // Call transfer tokens with payload with args defined above.
             transfer_tokens_with_payload<NATIVE_COIN_4_DECIMALS>(
-                &mut emitter_cap,
                 &mut bridge_state,
+                &mut emitter_cap,
                 &mut worm_state,
                 coins,
                 coin::zero<SUI>(ctx(&mut test)), // Zero fee paid to wormhole.
@@ -144,7 +141,7 @@ module token_bridge::transfer_tokens_with_payload_test {
         // Check that custody of the coins is indeed transferred to token bridge.
         next_tx(&mut test, admin);{
             let bridge_state = take_shared<State>(&test);
-            let cur_bal = state::balance<NATIVE_COIN_4_DECIMALS>(&mut bridge_state);
+            let cur_bal = state::custody_balance<NATIVE_COIN_4_DECIMALS>(&mut bridge_state);
             assert!(cur_bal==10000, 0);
             return_shared<State>(bridge_state);
         };
@@ -163,7 +160,7 @@ module token_bridge::transfer_tokens_with_payload_test {
         // the wrapped token.
         next_tx(&mut test, admin);{
             let bridge_state = take_shared<State>(&test);
-            state::register_emitter(
+            state::register_new_emitter_test_only(
                 &mut bridge_state,
                 2, // Chain ID.
                 external_address::from_any_bytes(
@@ -179,7 +176,7 @@ module token_bridge::transfer_tokens_with_payload_test {
             let worm_state = take_shared<WormholeState>(&test);
             let coin_meta = take_shared<CoinMetadata<WRAPPED_COIN_12_DECIMALS>>(&test);
             let new_wrapped_coin =
-                take_from_address<WrappedCoin<WRAPPED_COIN_12_DECIMALS>>(&test, admin);
+                take_from_address<Unregistered<WRAPPED_COIN_12_DECIMALS>>(&test, admin);
             let payload = x"ddddaaaabbbb";
 
             // Register wrapped asset with the token bridge.
@@ -192,7 +189,7 @@ module token_bridge::transfer_tokens_with_payload_test {
             );
 
             let coins =
-                state::mint<WRAPPED_COIN_12_DECIMALS>(
+                state::put_into_circulation_test_only<WRAPPED_COIN_12_DECIMALS>(
                     &mut bridge_state,
                     1000, // Amount.
                     ctx(&mut test)
@@ -206,8 +203,8 @@ module token_bridge::transfer_tokens_with_payload_test {
 
             // Call complete transfer with payload using previous args.
             transfer_tokens_with_payload<WRAPPED_COIN_12_DECIMALS>(
-                &mut emitter_cap,
                 &mut bridge_state,
+                &mut emitter_cap,
                 &mut worm_state,
                 coins,
                 coin::zero<SUI>(ctx(&mut test)), // Zero fee paid to wormhole.

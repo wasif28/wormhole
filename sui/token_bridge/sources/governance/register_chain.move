@@ -56,7 +56,7 @@ module token_bridge::register_chain {
         let emitter_address = external_address::take_bytes(&mut cur);
         cursor::destroy_empty(cur);
 
-        state::register_emitter(
+        state::register_new_emitter(
             token_bridge_state,
             emitter_chain,
             emitter_address

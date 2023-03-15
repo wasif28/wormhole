@@ -1,12 +1,9 @@
 module token_bridge::complete_transfer_with_payload {
-    use sui::tx_context::{TxContext};
     use sui::coin::{Coin};
-
-    use wormhole::state::{State as WormholeState};
+    use sui::tx_context::{TxContext};
     use wormhole::emitter::{Self, EmitterCap};
-    use wormhole::vaa::{emitter_chain};
+    use wormhole::state::{State as WormholeState};
 
-    use token_bridge::complete_transfer::{verify_transfer_details};
     use token_bridge::state::{State};
     use token_bridge::transfer_with_payload::{Self, TransferWithPayload};
     use token_bridge::vaa::{Self};
@@ -17,29 +14,30 @@ module token_bridge::complete_transfer_with_payload {
     public fun complete_transfer_with_payload<CoinType>(
         token_bridge_state: &mut State,
         emitter_cap: &EmitterCap,
-        worm_state: &mut WormholeState,
-        vaa: vector<u8>,
+        worm_state: &WormholeState,
+        vaa_buf: vector<u8>,
         ctx: &mut TxContext
     ): (Coin<CoinType>, TransferWithPayload, u16) {
         // Parse and verify Token Bridge transfer message. This method
         // guarantees that a verified transfer message cannot be redeemed again.
-        let transfer_vaa =
-            vaa::parse_verify_and_replay_protect(
+        let parsed_vaa =
+            vaa::parse_verify_and_consume(
                 token_bridge_state,
                 worm_state,
-                vaa,
+                vaa_buf,
                 ctx
             );
 
         // Before destroying VAA, store the emitter chain ID for the caller.
-        let source_chain = emitter_chain(&transfer_vaa);
+        let source_chain = wormhole::vaa::emitter_chain(&parsed_vaa);
 
         // Deserialize for processing.
         let parsed_transfer =
             transfer_with_payload::deserialize(
-                wormhole::vaa::take_payload(transfer_vaa)
+                wormhole::vaa::take_payload(parsed_vaa)
             );
-        let token_coin =
+
+        let bridged =
             handle_complete_transfer_with_payload(
                 token_bridge_state,
                 emitter_cap,
@@ -47,51 +45,33 @@ module token_bridge::complete_transfer_with_payload {
                 ctx
             );
 
-        (token_coin, parsed_transfer, source_chain)
+        (bridged, parsed_transfer, source_chain)
     }
 
     fun handle_complete_transfer_with_payload<CoinType>(
         token_bridge_state: &mut State,
         emitter_cap: &EmitterCap,
-        parsed_transfer: &TransferWithPayload,
+        parsed: &TransferWithPayload,
         ctx: &mut TxContext
     ): Coin<CoinType> {
-        let redeemer = transfer_with_payload::recipient(parsed_transfer);
+        use token_bridge::complete_transfer::{verify_and_take_coin};
 
         // Transfer must be redeemed by the contract's registered Wormhole
         // emitter.
+        let redeemer = transfer_with_payload::recipient(parsed);
         assert!(redeemer == emitter::addr(emitter_cap), E_INVALID_REDEEMER);
 
-        let (token_coin, _) =
-            verify_transfer_details<CoinType>(
+        let (bridged, _) =
+            verify_and_take_coin<CoinType>(
                 token_bridge_state,
-                transfer_with_payload::token_chain(parsed_transfer),
-                transfer_with_payload::token_address(parsed_transfer),
-                transfer_with_payload::recipient_chain(parsed_transfer),
-                transfer_with_payload::amount(parsed_transfer),
+                transfer_with_payload::token_chain(parsed),
+                transfer_with_payload::token_address(parsed),
+                transfer_with_payload::recipient_chain(parsed),
+                transfer_with_payload::amount(parsed),
                 ctx
             );
 
-        token_coin
-    }
-
-    #[test_only]
-    /// This method is exists to expose `handle_complete_transfer_with_payload`
-    /// and validate its job. `handle_complete_transfer_with_payload` is used by
-    /// `complete_transfer_with_payload`.
-    public fun complete_transfer_with_payload_test_only<CoinType>(
-        token_bridge_state: &mut State,
-        emitter_cap: &EmitterCap,
-        _worm_state: &mut WormholeState,
-        parsed_transfer: TransferWithPayload,
-        ctx: &mut TxContext
-    ): Coin<CoinType> {
-        handle_complete_transfer_with_payload<CoinType>(
-                token_bridge_state,
-                emitter_cap,
-                &parsed_transfer,
-                ctx
-            )
+        bridged
     }
 }
 
@@ -206,7 +186,7 @@ module token_bridge::complete_transfer_with_payload_test {
             let worm_state = test_scenario::take_shared<WormholeState>(&test);
             let coin_meta =
                 test_scenario::take_shared<CoinMetadata<NATIVE_COIN_10_DECIMALS>>(&test);
-            state::register_native_asset<NATIVE_COIN_10_DECIMALS>(
+            state::register_native_asset_test_only(
                 &mut bridge_state,
                 &coin_meta,
             );
@@ -227,7 +207,7 @@ module token_bridge::complete_transfer_with_payload_test {
                     10000000000, // amount
                     test_scenario::ctx(&mut test)
                 );
-            state::deposit<NATIVE_COIN_10_DECIMALS>(
+            state::take_from_circulation_test_only<NATIVE_COIN_10_DECIMALS>(
                 &mut bridge_state,
                 coins
             );

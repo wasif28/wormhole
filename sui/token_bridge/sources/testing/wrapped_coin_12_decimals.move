@@ -38,12 +38,10 @@ module token_bridge::wrapped_coin_12_decimals_test {
     use token_bridge::state::{State, is_registered_asset, is_wrapped_asset,
         token_info};
     use token_bridge::bridge_state_test::{set_up_wormhole_core_and_token_bridges};
-    use token_bridge::create_wrapped::{register_new_coin};
+    use token_bridge::create_wrapped::{Unregistered, register_new_coin};
     use token_bridge::register_chain::{submit_vaa};
-    use token_bridge::wrapped_coin::{WrappedCoin};
 
     use token_bridge::wrapped_coin_12_decimals::{test_init, WRAPPED_COIN_12_DECIMALS};
-    use token_bridge::token_info::{Self};
     use token_bridge::create_wrapped::{Self};
 
     fun scenario(): Scenario { test_scenario::begin(@0x123233) }
@@ -118,10 +116,7 @@ module token_bridge::wrapped_coin_12_decimals_test {
     }
 
     #[test]
-    #[expected_failure(
-        abort_code = token_bridge::create_wrapped::E_UNREGISTERED_WRAPPED_ASSET,
-        location=token_bridge::create_wrapped
-    )]
+    #[expected_failure(abort_code = token_bridge::state::E_UNREGISTERED_TOKEN)]
     /// In this test, we attempt to update coin metadata for an asset that
     /// does not correspond to WRAPPED_COIN_12_DECIMALS, namely an Ethereum token
     /// with the address "0x00000000000000000000000000000000000000000000000000000000beeffaaa"
@@ -159,10 +154,7 @@ module token_bridge::wrapped_coin_12_decimals_test {
     }
 
     #[test]
-    #[expected_failure(
-        abort_code = token_bridge::create_wrapped::E_UNREGISTERED_WRAPPED_ASSET,
-        location=token_bridge::create_wrapped
-    )]
+    #[expected_failure(abort_code = token_bridge::state::E_UNREGISTERED_TOKEN)]
     /// In this test, we attempt to update coin metadata for an asset that
     /// does not correspond to WRAPPED_COIN_12_DECIMALS, namely a token
     /// with origin chain of Acala instead of Ethereum.
@@ -276,7 +268,7 @@ module token_bridge::wrapped_coin_12_decimals_test {
             let bridge_state = take_shared<State>(&test);
             let worm_state = take_shared<WormholeState>(&test);
             let coin_meta = take_shared<CoinMetadata<WRAPPED_COIN_12_DECIMALS>>(&test);
-            let wrapped_coin = take_from_address<WrappedCoin<WRAPPED_COIN_12_DECIMALS>>(&test, admin);
+            let wrapped_coin = take_from_address<Unregistered<WRAPPED_COIN_12_DECIMALS>>(&test, admin);
             register_new_coin<WRAPPED_COIN_12_DECIMALS>(
                 &mut bridge_state,
                 &mut worm_state,
@@ -293,11 +285,11 @@ module token_bridge::wrapped_coin_12_decimals_test {
             assert!(is_wrapped, 0);
 
             // assert origin info is correct
-            let info = token_info<WRAPPED_COIN_12_DECIMALS>(&bridge_state);
-            assert!(token_info::chain(&info) == 2, 0);
+            let (token_chain, token_address) = token_info<WRAPPED_COIN_12_DECIMALS>(&bridge_state);
+            assert!(token_chain == 2, 0);
 
             let expected_addr = external_address::from_any_bytes(x"beefface");
-            assert!(token_info::addr(&info) == expected_addr, 0);
+            assert!(token_address == expected_addr, 0);
 
             return_shared<State>(bridge_state);
             return_shared<WormholeState>(worm_state);
